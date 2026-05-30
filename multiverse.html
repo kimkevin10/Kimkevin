@@ -6,48 +6,49 @@
 <title>MULTIVERSE</title>
 <style>
   * { margin:0; padding:0; box-sizing:border-box; }
-  body { background:#000; overflow:hidden; width:100vw; height:100vh; font-family:'Courier New',monospace; }
+  body { background:#00060f; overflow:hidden; width:100vw; height:100vh; font-family:'Courier New',monospace; }
   #threeCanvas { position:absolute; top:0; left:0; width:100%; height:100%; z-index:1; }
   #camCanvas {
     position:absolute; bottom:16px; right:16px;
-    width:160px; height:120px;
-    border-radius:10px; border:1px solid rgba(255,255,255,0.15);
-    z-index:10; transform:scaleX(-1); opacity:0.8;
+    width:150px; height:112px;
+    border-radius:10px; border:1px solid rgba(80,180,255,0.2);
+    z-index:10; transform:scaleX(-1); opacity:0.75;
   }
   #lmCanvas {
     position:absolute; bottom:16px; right:16px;
-    width:160px; height:120px;
+    width:150px; height:112px;
     border-radius:10px; z-index:11; pointer-events:none;
   }
   #state-display {
     position:absolute; top:22px; left:50%; transform:translateX(-50%);
-    color:rgba(180,220,255,0.7); font-size:11px; letter-spacing:0.3em;
-    text-transform:uppercase; z-index:20;
+    color:rgba(120,200,255,0.7); font-size:11px; letter-spacing:0.3em;
+    text-transform:uppercase; z-index:20; white-space:nowrap;
   }
   #debug {
     position:absolute; top:46px; left:50%; transform:translateX(-50%);
-    color:rgba(100,255,180,0.6); font-size:9px; letter-spacing:0.08em;
+    color:rgba(80,255,180,0.55); font-size:9px; letter-spacing:0.08em;
     z-index:20; text-align:center; white-space:nowrap;
   }
   #guide {
     position:absolute; bottom:20px; left:18px;
-    color:rgba(255,255,255,0.25); font-size:9px; line-height:2.1; letter-spacing:0.08em; z-index:20;
+    color:rgba(255,255,255,0.2); font-size:9px; line-height:2.2;
+    letter-spacing:0.08em; z-index:20;
   }
-  #guide b { color:rgba(180,220,255,0.6); font-weight:normal; }
+  #guide b { color:rgba(120,200,255,0.55); font-weight:normal; }
 </style>
 </head>
 <body>
 <canvas id="threeCanvas"></canvas>
 <video id="video" style="display:none" playsinline autoplay></video>
-<canvas id="camCanvas" width="160" height="120"></canvas>
-<canvas id="lmCanvas"  width="160" height="120"></canvas>
+<canvas id="camCanvas" width="150" height="112"></canvas>
+<canvas id="lmCanvas"  width="150" height="112"></canvas>
 <div id="state-display">로딩 중…</div>
 <div id="debug"></div>
 <div id="guide">
   <b>왼손 펼침</b> — 은하 소환<br>
   <b>오른손 핀치 거리</b> — 확대 / 축소<br>
   <b>오른손 핀치 닫힘</b> — 수렴 → 빅뱅<br>
-  <b>왼손 주먹</b> — 고정 &nbsp;|&nbsp; <b>고정+오른손 회전</b> — 은하 회전
+  <b>왼손 주먹</b> — 고정 &nbsp;|&nbsp; <b>고정+오른손 회전</b> — 회전
 </div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
@@ -56,162 +57,284 @@
 <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
 
 <script>
-// ════════════════════════════════════════════
+// ══════════════════════════════════════════
 // CONFIG
-// ════════════════════════════════════════════
-const N       = 8000;          // 파티클 수
-const ARMS    = 3;             // 나선팔 수
-const RADIUS  = 9.0;           // 은하 반경
-const DPR     = Math.min(window.devicePixelRatio, 2);
+// ══════════════════════════════════════════
+const N_BIG   = 180;   // 크고 밝은 별
+const N_MED   = 600;   // 중간 별
+const N_SMALL = 1200;  // 작은 별
+const N_DUST  = 3000;  // 먼지/배경 점
+const N_TOTAL = N_BIG + N_MED + N_SMALL + N_DUST;
 
-// 핀치 단계 임계값 (0~1 정규화 거리)
-// 단계 0=완전닫힘  1=축소  2=기본  3=확대  4=최대
+const GALAXY_R = 8.0;
+const DPR      = Math.min(window.devicePixelRatio, 2);
+
 const THRESH = [0.09, 0.22, 0.37, 0.52];
 const HYST   = 0.035;
 const SCALES = [1.0, 0.42, 1.0, 1.75, 2.7];
+const SMOOTH = 14, RSMOOTH = 10, RSNAP = 5;
 
-const SMOOTH  = 14;   // 핀치 이동평균 프레임
-const RSMOOTH = 10;   // 회전 이동평균
-const RSNAP   = 5;    // 회전 스냅(도)
-
-// ════════════════════════════════════════════
+// ══════════════════════════════════════════
 // STATE
-// ════════════════════════════════════════════
-let state = 'idle';
-let visible = false;
-let summonT = 0, convergeT = 0, explodeT = 0;
-let exploding = false, explodeVels = null;
-let gScale = 1, gScaleTarget = 1;
-let gRotY = 0, gRotTarget = 0;
-let pStage = 2, pBuf = [], rBuf = [];
-let angFixStart = null, rotFixStart = 0;
+// ══════════════════════════════════════════
+let state='idle', visible=false;
+let summonT=0, convergeT=0, explodeT=0;
+let exploding=false, explodeVels=null;
+let gScale=1, gScaleTarget=1;
+let gRotY=0, gRotTarget=0;
+let pStage=2, pBuf=[], rBuf=[];
+let angFixStart=null, rotFixStart=0;
 
-// ════════════════════════════════════════════
-// THREE.JS
-// ════════════════════════════════════════════
+// ══════════════════════════════════════════
+// THREE SETUP
+// ══════════════════════════════════════════
 const canvas3d = document.getElementById('threeCanvas');
 const renderer = new THREE.WebGLRenderer({ canvas:canvas3d, antialias:true });
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.setPixelRatio(DPR);
-renderer.setClearColor(0x000005, 1);
+renderer.setClearColor(0x00060f, 1);
 
 const scene = new THREE.Scene();
 const cam3d = new THREE.PerspectiveCamera(55, window.innerWidth/window.innerHeight, 0.1, 2000);
-cam3d.position.set(0, 3, 22);
+cam3d.position.set(0, 4, 24);
 cam3d.lookAt(0, 0, 0);
 
-// ── 배경 별 (2레이어)
-function makeBgStars(count, spread, size, opacity) {
-  const geo = new THREE.BufferGeometry();
-  const pos = new Float32Array(count*3);
-  for(let i=0;i<count;i++){
-    pos[i*3]   = (Math.random()-0.5)*spread;
-    pos[i*3+1] = (Math.random()-0.5)*spread;
-    pos[i*3+2] = (Math.random()-0.5)*spread;
-  }
-  geo.setAttribute('position', new THREE.BufferAttribute(pos,3));
-  return new THREE.Points(geo, new THREE.PointsMaterial({
-    color:0xffffff, size, transparent:true, opacity, sizeAttenuation:true
-  }));
-}
-scene.add(makeBgStars(5000, 400, 0.12, 0.5));
-scene.add(makeBgStars(2000, 150, 0.25, 0.3));
+// ── 파티클 텍스처 (캔버스로 직접 생성)
+function makeStarTexture(innerGlow, size=128) {
+  const c = document.createElement('canvas');
+  c.width = c.height = size;
+  const ctx = c.getContext('2d');
+  const cx = size/2, cy = size/2, r = size/2;
 
-// ── 은하 파티클
-const pPos   = new Float32Array(N*3);  // 현재 위치
-const pBase  = new Float32Array(N*3);  // 은하 기본 위치
-const pCol   = new Float32Array(N*3);  // 색상
-const pSpeed = new Float32Array(N);    // 각 별 공전속도
+  // 외부 글로우
+  const gOut = ctx.createRadialGradient(cx,cy,0,cx,cy,r);
+  gOut.addColorStop(0,   `rgba(255,255,255,${innerGlow})`);
+  gOut.addColorStop(0.15,`rgba(200,240,255,${innerGlow*0.85})`);
+  gOut.addColorStop(0.35,`rgba(100,200,255,${innerGlow*0.4})`);
+  gOut.addColorStop(0.6, `rgba(40,120,255,${innerGlow*0.12})`);
+  gOut.addColorStop(1,   `rgba(0,0,0,0)`);
+  ctx.fillStyle = gOut;
+  ctx.fillRect(0,0,size,size);
+
+  // 코어
+  const gCore = ctx.createRadialGradient(cx,cy,0,cx,cy,r*0.18);
+  gCore.addColorStop(0,   'rgba(255,255,255,1)');
+  gCore.addColorStop(0.5, 'rgba(220,245,255,0.9)');
+  gCore.addColorStop(1,   'rgba(100,200,255,0)');
+  ctx.fillStyle = gCore;
+  ctx.fillRect(0,0,size,size);
+
+  return new THREE.CanvasTexture(c);
+}
+
+const texBig   = makeStarTexture(0.9, 128);
+const texMed   = makeStarTexture(0.65, 96);
+const texSmall = makeStarTexture(0.45, 64);
+const texDust  = makeStarTexture(0.25, 32);
+
+// ── 은하 파티클 데이터
+const pBase = new Float32Array(N_TOTAL * 3);
+const pType = new Uint8Array(N_TOTAL);  // 0=big,1=med,2=small,3=dust
+
+function spiral(i, total, R) {
+  // 나선형 + 원형 혼합
+  const t   = i / total;
+  const r   = Math.pow(Math.random(), 0.6) * R;
+  const arm = i % 3;
+  const armAng = (arm/3)*Math.PI*2;
+  const spin   = r * 0.8;
+  const scatter= 0.1 + (r/R)*0.6;
+  const ang    = armAng + spin + (Math.random()-0.5)*scatter*2.8;
+  return {
+    x: Math.cos(ang)*r + (Math.random()-0.5)*0.6,
+    y: (Math.random()-0.5)*(0.15 + (1-r/R)*0.5)*0.8,
+    z: Math.sin(ang)*r + (Math.random()-0.5)*0.6,
+  };
+}
 
 function buildGalaxy() {
-  for(let i=0;i<N;i++){
-    const arm    = i % ARMS;
-    const armAng = (arm/ARMS)*Math.PI*2;
-    // 반경: 중심부 밀집 + 외곽 분산
-    const r      = Math.pow(Math.random(), 0.5) * RADIUS;
-    const spin   = r * 0.7;
-    const scatter= (0.08 + (r/RADIUS)*0.35) * 2.2;
-    const ang    = armAng + spin + (Math.random()-0.5)*scatter;
-
-    const x = Math.cos(ang)*r + (Math.random()-0.5)*0.5;
-    const y = (Math.random()-0.5) * (0.2 + (1-r/RADIUS)*0.8) * 0.9;
-    const z = Math.sin(ang)*r + (Math.random()-0.5)*0.5;
-
-    pBase[i*3]=x; pBase[i*3+1]=y; pBase[i*3+2]=z;
-    pSpeed[i] = 0.00015 + Math.random()*0.00025;
-
-    // 색상 팔레트: 중심=밝은 노랑/흰색, 팔=파랑/시안, 외곽=보라/분홍
-    const core = 1 - r/RADIUS;
-    const mid  = Math.max(0, 1 - Math.abs(r/RADIUS - 0.5)*2);
-    pCol[i*3]   = 0.7 + core*0.3;                    // R
-    pCol[i*3+1] = 0.3 + core*0.5 + mid*0.2;          // G
-    pCol[i*3+2] = 0.9 + core*0.1 - (1-core)*0.2;     // B
+  let idx = 0;
+  // 큰 별 — 중심부 + 나선팔 따라
+  for(let i=0;i<N_BIG;i++){
+    const s = spiral(i, N_BIG, GALAXY_R*0.85);
+    // 큰 별은 중심 쪽에 더 많이
+    const pull = Math.random()<0.4 ? 0.3 : 1.0;
+    pBase[idx*3]=s.x*pull; pBase[idx*3+1]=s.y; pBase[idx*3+2]=s.z*pull;
+    pType[idx]=0; idx++;
+  }
+  // 중간 별
+  for(let i=0;i<N_MED;i++){
+    const s = spiral(i, N_MED, GALAXY_R);
+    pBase[idx*3]=s.x; pBase[idx*3+1]=s.y; pBase[idx*3+2]=s.z;
+    pType[idx]=1; idx++;
+  }
+  // 작은 별
+  for(let i=0;i<N_SMALL;i++){
+    const s = spiral(i, N_SMALL, GALAXY_R*1.05);
+    pBase[idx*3]=s.x; pBase[idx*3+1]=s.y; pBase[idx*3+2]=s.z;
+    pType[idx]=2; idx++;
+  }
+  // 먼지 — 원형으로 퍼짐
+  for(let i=0;i<N_DUST;i++){
+    const r   = Math.pow(Math.random(),0.4)*GALAXY_R*1.1;
+    const ang = Math.random()*Math.PI*2;
+    pBase[idx*3]   = Math.cos(ang)*r + (Math.random()-0.5)*1.0;
+    pBase[idx*3+1] = (Math.random()-0.5)*0.5;
+    pBase[idx*3+2] = Math.sin(ang)*r + (Math.random()-0.5)*1.0;
+    pType[idx]=3; idx++;
   }
 }
 buildGalaxy();
 
-const pGeo = new THREE.BufferGeometry();
-pGeo.setAttribute('position', new THREE.BufferAttribute(pPos.slice(), 3));
-pGeo.setAttribute('color',    new THREE.BufferAttribute(pCol, 3));
+// ── 4개 레이어로 분리된 파티클 시스템
+function makeLayer(startIdx, count, tex, baseSize, opacity) {
+  const geo = new THREE.BufferGeometry();
+  const pos = new Float32Array(count*3);
+  for(let i=0;i<count;i++){
+    pos[i*3]   = pBase[(startIdx+i)*3];
+    pos[i*3+1] = pBase[(startIdx+i)*3+1];
+    pos[i*3+2] = pBase[(startIdx+i)*3+2];
+  }
+  geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
 
-// iPad 대응: gl_PointSize에 DPR 보정 적용
-const pMat = new THREE.ShaderMaterial({
-  uniforms:{
-    uOpacity:  { value: 0 },
-    uConverge: { value: 0 },
-    uDPR:      { value: DPR },
-  },
+  // 크기 변화 (각 파티클마다 랜덤 크기)
+  const sizes = new Float32Array(count);
+  for(let i=0;i<count;i++){
+    sizes[i] = baseSize * (0.5 + Math.random()*1.0);
+  }
+  geo.setAttribute('size', new THREE.BufferAttribute(sizes, 1));
+
+  const mat = new THREE.ShaderMaterial({
+    uniforms:{
+      uTex:     { value: tex },
+      uOpacity: { value: 0 },
+      uConverge:{ value: 0 },
+      uDPR:     { value: DPR },
+    },
+    vertexShader:`
+      attribute float size;
+      uniform float uDPR;
+      void main(){
+        vec4 mv = modelViewMatrix * vec4(position,1.0);
+        gl_PointSize = size * (400.0 / -mv.z) / uDPR;
+        gl_Position  = projectionMatrix * mv;
+      }`,
+    fragmentShader:`
+      uniform sampler2D uTex;
+      uniform float uOpacity;
+      void main(){
+        vec4 t = texture2D(uTex, gl_PointCoord);
+        gl_FragColor = vec4(t.rgb, t.a * uOpacity);
+      }`,
+    transparent:true, depthWrite:false,
+    blending: THREE.AdditiveBlending,
+  });
+
+  const mesh = new THREE.Points(geo, mat);
+  scene.add(mesh);
+  return { geo, mat, startIdx, count, pos };
+}
+
+const layers = [
+  makeLayer(0,          N_BIG,   texBig,   22, 0),
+  makeLayer(N_BIG,      N_MED,   texMed,   14, 0),
+  makeLayer(N_BIG+N_MED, N_SMALL, texSmall, 9, 0),
+  makeLayer(N_BIG+N_MED+N_SMALL, N_DUST, texDust, 5, 0),
+];
+
+// ── 중심 핵 글로우 (별도 스프라이트)
+const coreTexture = makeStarTexture(1.0, 256);
+const coreGeo = new THREE.BufferGeometry();
+coreGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array([0,0,0]),3));
+const coreMat = new THREE.ShaderMaterial({
+  uniforms:{ uTex:{value:coreTexture}, uOpacity:{value:0}, uDPR:{value:DPR} },
   vertexShader:`
-    attribute vec3 color;
-    varying vec3 vColor;
     uniform float uDPR;
     void main(){
-      vColor = color;
-      vec4 mv = modelViewMatrix * vec4(position, 1.0);
-      float dist = length(position);
-      // 중심부 더 크게, 외곽 작게  /  DPR 역보정으로 iPad에서 충분히 크게
-      float base = 3.5 + (1.0 - clamp(dist/${RADIUS.toFixed(1)}, 0.0, 1.0)) * 4.0;
-      gl_PointSize = base * (350.0 / -mv.z) / uDPR * 2.2;
-      gl_Position  = projectionMatrix * mv;
+      vec4 mv=modelViewMatrix*vec4(position,1.0);
+      gl_PointSize=180.0*(400.0/-mv.z)/uDPR;
+      gl_Position=projectionMatrix*mv;
     }`,
   fragmentShader:`
-    varying vec3 vColor;
-    uniform float uOpacity;
+    uniform sampler2D uTex; uniform float uOpacity;
     void main(){
-      vec2 uv = gl_PointCoord - 0.5;
-      float d  = length(uv);
-      if(d > 0.5) discard;
-      // 부드러운 글로우
-      float core = 1.0 - smoothstep(0.0, 0.5, d);
-      float glow = pow(core, 1.8);
-      gl_FragColor = vec4(vColor * (0.7 + glow*0.5), glow * uOpacity);
+      vec4 t=texture2D(uTex,gl_PointCoord);
+      gl_FragColor=vec4(t.rgb,t.a*uOpacity);
     }`,
   transparent:true, depthWrite:false,
-  blending: THREE.AdditiveBlending, vertexColors:true,
+  blending: THREE.AdditiveBlending,
 });
+scene.add(new THREE.Points(coreGeo, coreMat));
 
-const pMesh = new THREE.Points(pGeo, pMat);
-scene.add(pMesh);
+// ── 배경 별 (아주 작고 흰)
+const bgGeo = new THREE.BufferGeometry();
+const bgPos = new Float32Array(3000*3);
+for(let i=0;i<3000;i++){
+  bgPos[i*3]=(Math.random()-0.5)*600;
+  bgPos[i*3+1]=(Math.random()-0.5)*600;
+  bgPos[i*3+2]=(Math.random()-0.5)*600;
+}
+bgGeo.setAttribute('position', new THREE.BufferAttribute(bgPos,3));
+scene.add(new THREE.Points(bgGeo, new THREE.PointsMaterial({
+  color:0xaaccff, size:0.15, transparent:true, opacity:0.4, sizeAttenuation:true
+})));
 
-// ── 성운 글로우 (중심부 빛)
-const glowGeo = new THREE.SphereGeometry(1.5, 16, 16);
-const glowMat = new THREE.MeshBasicMaterial({
-  color:0x8888ff, transparent:true, opacity:0, side:THREE.FrontSide
-});
-const glowMesh = new THREE.Mesh(glowGeo, glowMat);
-scene.add(glowMesh);
+// ══════════════════════════════════════════
+// EXPLODE VELOCITIES
+// ══════════════════════════════════════════
+let explodeVelLayers = null;
+function initExplode(){
+  explodeVelLayers = layers.map(l=>{
+    const v = new Float32Array(l.count*3);
+    for(let i=0;i<l.count;i++){
+      const th=Math.random()*Math.PI*2, ph=Math.acos(2*Math.random()-1);
+      const sp=0.3+Math.random()*2.2;
+      v[i*3]   = Math.sin(ph)*Math.cos(th)*sp;
+      v[i*3+1] = Math.cos(ph)*sp*0.4;
+      v[i*3+2] = Math.sin(ph)*Math.sin(th)*sp;
+    }
+    return v;
+  });
+}
 
-// ════════════════════════════════════════════
+// ══════════════════════════════════════════
+// UPDATE PARTICLES
+// ══════════════════════════════════════════
+function updateAllLayers(scale, converge, expT){
+  const cy=Math.cos(gRotY), sy=Math.sin(gRotY);
+  const c=eio(Math.min(converge,1));
+
+  layers.forEach((l,li)=>{
+    const pos = l.geo.attributes.position.array;
+    const ev  = explodeVelLayers ? explodeVelLayers[li] : null;
+    for(let i=0;i<l.count;i++){
+      const bi = (l.startIdx+i)*3;
+      const bx=pBase[bi], by=pBase[bi+1], bz=pBase[bi+2];
+      const rx = bx*cy - bz*sy;
+      const rz = bx*sy + bz*cy;
+      pos[i*3]   = rx*scale*(1-c);
+      pos[i*3+1] = by*scale*(1-c);
+      pos[i*3+2] = rz*scale*(1-c);
+      if(exploding && ev){
+        const ease=Math.pow(Math.min(expT,1),0.28);
+        pos[i*3]   += ev[i*3]   *ease*18;
+        pos[i*3+1] += ev[i*3+1] *ease*18;
+        pos[i*3+2] += ev[i*3+2] *ease*18;
+      }
+    }
+    l.geo.attributes.position.needsUpdate=true;
+  });
+}
+
+// ══════════════════════════════════════════
 // HELPERS
-// ════════════════════════════════════════════
-const eio = t => t<0.5 ? 2*t*t : -1+(4-2*t)*t;
-const eout= t => t*(2-t);
-
+// ══════════════════════════════════════════
+const eio = t=>t<0.5?2*t*t:-1+(4-2*t)*t;
+const eout= t=>t*(2-t);
 function movAvg(buf,val,n){
   buf.push(val); if(buf.length>n) buf.shift();
   return buf.reduce((a,b)=>a+b,0)/buf.length;
 }
-
 function calcStage(dist,prev){
   let s=prev;
   for(let i=0;i<THRESH.length;i++){
@@ -220,58 +343,26 @@ function calcStage(dist,prev){
   }
   return Math.max(0,Math.min(4,s));
 }
-
 const d2=(a,b)=>Math.sqrt((a.x-b.x)**2+(a.y-b.y)**2);
-
 function isOpen(lm){
   let n=0;
-  [[8,6],[12,10],[16,14],[20,18]].forEach(([t,p])=>{ if(lm[t].y<lm[p].y) n++; });
+  [[8,6],[12,10],[16,14],[20,18]].forEach(([t,p])=>{if(lm[t].y<lm[p].y)n++;});
   return n>=3;
 }
 function isFist(lm){
   let n=0;
-  [[8,6],[12,10],[16,14],[20,18]].forEach(([t,p])=>{ if(lm[t].y>lm[p].y) n++; });
+  [[8,6],[12,10],[16,14],[20,18]].forEach(([t,p])=>{if(lm[t].y>lm[p].y)n++;});
   return n>=3;
 }
-const pAng = lm => Math.atan2(lm[8].y-lm[4].y, lm[8].x-lm[4].x)*180/Math.PI;
+const pAng=lm=>Math.atan2(lm[8].y-lm[4].y,lm[8].x-lm[4].x)*180/Math.PI;
 
-// 파티클 위치 계산
-function updateParticles(scale, converge, expT){
-  const pos = pGeo.attributes.position.array;
-  const cy=Math.cos(gRotY), sy=Math.sin(gRotY);
-  const c = eio(Math.min(converge,1));
-
-  for(let i=0;i<N;i++){
-    let bx=pBase[i*3], by=pBase[i*3+1], bz=pBase[i*3+2];
-    // Y축 회전
-    const rx = bx*cy - bz*sy;
-    const rz = bx*sy + bz*cy;
-    // 스케일 + 수렴
-    pos[i*3]   = rx*scale*(1-c);
-    pos[i*3+1] = by*scale*(1-c);
-    pos[i*3+2] = rz*scale*(1-c);
-    // 폭발
-    if(exploding && explodeVels){
-      const ease = Math.pow(Math.min(expT,1),0.28);
-      pos[i*3]   += explodeVels[i*3]   * ease * 16;
-      pos[i*3+1] += explodeVels[i*3+1] * ease * 16;
-      pos[i*3+2] += explodeVels[i*3+2] * ease * 16;
-    }
-  }
-  pGeo.attributes.position.needsUpdate=true;
+function setAllOpacity(val){
+  layers.forEach(l=>l.mat.uniforms.uOpacity.value=val);
+  coreMat.uniforms.uOpacity.value=val*1.2;
 }
-
-function initExplode(){
-  explodeVels = new Float32Array(N*3);
-  for(let i=0;i<N;i++){
-    const th=Math.random()*Math.PI*2, ph=Math.acos(2*Math.random()-1);
-    const sp=0.3+Math.random()*2.0;
-    explodeVels[i*3]   = Math.sin(ph)*Math.cos(th)*sp;
-    explodeVels[i*3+1] = Math.cos(ph)*sp*0.45;
-    explodeVels[i*3+2] = Math.sin(ph)*Math.sin(th)*sp;
-  }
+function setAllConverge(val){
+  layers.forEach(l=>l.mat.uniforms.uConverge.value=val);
 }
-
 function setState(s){
   state=s;
   document.getElementById('state-display').textContent={
@@ -283,92 +374,71 @@ function setState(s){
     exploding:'✦ BIG BANG ✦'
   }[s]||s;
 }
-
 function resetAll(){
-  visible=false; exploding=false;
+  visible=false; exploding=false; explodeVelLayers=null;
   gScale=1; gScaleTarget=1; gRotY=0; gRotTarget=0;
   pStage=2; pBuf=[]; rBuf=[];
   convergeT=0; summonT=0; explodeT=0;
-  pMat.uniforms.uOpacity.value=0;
-  pMat.uniforms.uConverge.value=0;
-  glowMat.opacity=0;
+  setAllOpacity(0); setAllConverge(0);
   angFixStart=null;
   setState('idle');
 }
 
-// ════════════════════════════════════════════
+// ══════════════════════════════════════════
 // MEDIAPIPE
-// ════════════════════════════════════════════
+// ══════════════════════════════════════════
 const video  = document.getElementById('video');
 const camCvs = document.getElementById('camCanvas');
 const lmCvs  = document.getElementById('lmCanvas');
 const camCtx = camCvs.getContext('2d');
 const lmCtx  = lmCvs.getContext('2d');
 const dbgEl  = document.getElementById('debug');
-
 let leftHand=null, rightHand=null;
 
 const mpHands = new Hands({
-  locateFile: f=>`https://cdn.jsdelivr.net/npm/@mediapipe/hands/${f}`
+  locateFile:f=>`https://cdn.jsdelivr.net/npm/@mediapipe/hands/${f}`
 });
 mpHands.setOptions({
   maxNumHands:2, modelComplexity:1,
   minDetectionConfidence:0.70, minTrackingConfidence:0.70
 });
-
 mpHands.onResults(res=>{
   camCtx.save(); camCtx.scale(-1,1);
-  camCtx.drawImage(res.image,-160,0,160,120);
+  camCtx.drawImage(res.image,-150,0,150,112);
   camCtx.restore();
-  lmCtx.clearRect(0,0,160,120);
-
+  lmCtx.clearRect(0,0,150,112);
   leftHand=null; rightHand=null;
-
-  if(res.multiHandLandmarks && res.multiHandedness){
+  if(res.multiHandLandmarks&&res.multiHandedness){
     for(let i=0;i<res.multiHandLandmarks.length;i++){
-      const label = res.multiHandedness[i].label;
-      const lm    = res.multiHandLandmarks[i];
-      // 셀피 미러: MediaPipe 'Right' = 화면 오른쪽 = 실제 왼손
-      if(label==='Right') leftHand  = lm;
-      if(label==='Left')  rightHand = lm;
-
-      lmCtx.save(); lmCtx.scale(-1,1); lmCtx.translate(-160,0);
-      drawConnectors(lmCtx,lm,HAND_CONNECTIONS,{color:'rgba(80,200,255,0.45)',lineWidth:1});
-      drawLandmarks(lmCtx,lm,{color:'rgba(255,255,255,0.85)',lineWidth:0.5,radius:2});
+      const label=res.multiHandedness[i].label;
+      const lm=res.multiHandLandmarks[i];
+      if(label==='Right') leftHand=lm;
+      if(label==='Left')  rightHand=lm;
+      lmCtx.save(); lmCtx.scale(-1,1); lmCtx.translate(-150,0);
+      drawConnectors(lmCtx,lm,HAND_CONNECTIONS,{color:'rgba(80,200,255,0.4)',lineWidth:1});
+      drawLandmarks(lmCtx,lm,{color:'rgba(255,255,255,0.8)',lineWidth:0.5,radius:2});
       lmCtx.restore();
     }
   }
-
-  // 디버그
-  const lStr = leftHand
-    ? (isOpen(leftHand)?'왼:펼침':isFist(leftHand)?'왼:주먹':'왼:중간')
-    : '왼:없음';
-  const rStr = rightHand
-    ? `오:핀치=${d2(rightHand[4],rightHand[8]).toFixed(3)}`
-    : '오:없음';
-  dbgEl.textContent = `${lStr}  ${rStr}`;
-
+  const lStr=leftHand?(isOpen(leftHand)?'왼:펼침':isFist(leftHand)?'왼:주먹':'왼:중간'):'왼:없음';
+  const rStr=rightHand?`오:${d2(rightHand[4],rightHand[8]).toFixed(3)}`:'오:없음';
+  dbgEl.textContent=`${lStr}  ${rStr}`;
   processGestures();
 });
 
-// ════════════════════════════════════════════
-// GESTURE LOGIC
-// ════════════════════════════════════════════
+// ══════════════════════════════════════════
+// GESTURES
+// ══════════════════════════════════════════
 function processGestures(){
-  const lo = leftHand  && isOpen(leftHand);
-  const lf = leftHand  && isFist(leftHand);
-  const rd = rightHand ? d2(rightHand[4],rightHand[8]) : null;
-  const ra = rightHand ? pAng(rightHand) : null;
-
+  const lo=leftHand&&isOpen(leftHand);
+  const lf=leftHand&&isFist(leftHand);
+  const rd=rightHand?d2(rightHand[4],rightHand[8]):null;
+  const ra=rightHand?pAng(rightHand):null;
   switch(state){
     case 'idle':
-      if(lo){ setState('summoning'); summonT=0; }
+      if(lo){setState('summoning');summonT=0;}
       break;
-
-    case 'summoning':
-      // animate loop에서 처리
-      break;
-
+    case 'summoning': break;
     case 'active':
       if(lf){
         setState('fixed');
@@ -377,115 +447,103 @@ function processGestures(){
         break;
       }
       if(rd!==null){
-        const sm  = movAvg(pBuf, rd, SMOOTH);
-        const ns  = calcStage(sm, pStage);
+        const sm=movAvg(pBuf,rd,SMOOTH);
+        const ns=calcStage(sm,pStage);
         if(ns!==pStage){
           pStage=ns;
-          if(pStage===0){ setState('converging'); convergeT=0; }
-          else           { gScaleTarget=SCALES[pStage]; }
+          if(pStage===0){setState('converging');convergeT=0;}
+          else          {gScaleTarget=SCALES[pStage];}
         }
       }
       break;
-
     case 'fixed':
-      if(!lf){
-        setState('active');
-        angFixStart=null; rBuf=[];
-        break;
-      }
+      if(!lf){setState('active');angFixStart=null;rBuf=[];break;}
       if(ra!==null){
-        const sm  = movAvg(rBuf, ra, RSMOOTH);
-        const snp = Math.round(sm/RSNAP)*RSNAP;
-        if(angFixStart===null){ angFixStart=snp; }
-        else {
-          const delta = snp - angFixStart;
-          gRotTarget = rotFixStart + delta*Math.PI/180*0.85;
+        const sm=movAvg(rBuf,ra,RSMOOTH);
+        const snp=Math.round(sm/RSNAP)*RSNAP;
+        if(angFixStart===null){angFixStart=snp;}
+        else{
+          const delta=snp-angFixStart;
+          gRotTarget=rotFixStart+delta*Math.PI/180*0.85;
         }
       }
       break;
-
     case 'converging': break;
     case 'exploding':  break;
   }
 }
 
-// ════════════════════════════════════════════
-// ANIMATION LOOP
-// ════════════════════════════════════════════
-const clock = new THREE.Clock();
-
+// ══════════════════════════════════════════
+// ANIMATION
+// ══════════════════════════════════════════
+const clock=new THREE.Clock();
 function animate(){
   requestAnimationFrame(animate);
-  const dt = Math.min(clock.getDelta(), 0.05);
+  const dt=Math.min(clock.getDelta(),0.05);
+  const t =clock.getElapsedTime();
 
   switch(state){
     case 'summoning':
-      summonT = Math.min(summonT + dt*0.35, 1);
-      pMat.uniforms.uOpacity.value = eout(summonT)*0.95;
-      glowMat.opacity = eout(summonT)*0.12;
-      if(summonT>=1){ visible=true; setState('active'); }
+      summonT=Math.min(summonT+dt*0.33,1);
+      setAllOpacity(eout(summonT)*0.92);
+      if(summonT>=1){visible=true;setState('active');}
       break;
-
     case 'active':
-      gScale += (gScaleTarget - gScale)*0.05;
-      gRotY  += 0.0005;       // 자동 자전
-      gRotTarget = gRotY;
-      glowMat.opacity = 0.08 + Math.sin(clock.getElapsedTime()*0.8)*0.04;
+      gScale+=(gScaleTarget-gScale)*0.05;
+      gRotY+=0.0004;
+      gRotTarget=gRotY;
+      // 중심 핵 살짝 펄스
+      coreMat.uniforms.uOpacity.value=0.9+Math.sin(t*1.5)*0.1;
       break;
-
     case 'fixed':
-      gRotY += (gRotTarget - gRotY)*0.07;
-      glowMat.opacity = 0.08;
+      gRotY+=(gRotTarget-gRotY)*0.07;
       break;
-
     case 'converging':
-      convergeT = Math.min(convergeT + dt*0.5, 1);
-      pMat.uniforms.uConverge.value = eio(convergeT);
-      glowMat.opacity = eio(convergeT)*0.4;
-      glowMesh.scale.setScalar(1 + eio(convergeT)*0.5);
+      convergeT=Math.min(convergeT+dt*0.45,1);
+      const cv=eio(convergeT);
+      setAllConverge(cv);
+      // 수렴할수록 중심 밝아짐
+      coreMat.uniforms.uOpacity.value=0.9+cv*1.5;
       if(convergeT>=1){
         setState('exploding');
         exploding=true; explodeT=0;
         initExplode();
       }
       break;
-
     case 'exploding':
-      explodeT = Math.min(explodeT + dt*0.4, 1);
-      pMat.uniforms.uConverge.value = Math.max(0, 1-eio(explodeT)*2);
-      glowMat.opacity = Math.max(0, 0.4 - explodeT*0.5);
-      if(explodeT>0.5){
-        pMat.uniforms.uOpacity.value = Math.max(0,(1-(explodeT-0.5)/0.5)*0.95);
+      explodeT=Math.min(explodeT+dt*0.38,1);
+      setAllConverge(Math.max(0,1-eio(explodeT)*2.2));
+      coreMat.uniforms.uOpacity.value=Math.max(0,2.0-explodeT*3.0);
+      if(explodeT>0.45){
+        const fade=1-(explodeT-0.45)/0.55;
+        setAllOpacity(Math.max(0,fade*0.92));
       }
-      if(explodeT>=1){ resetAll(); }
+      if(explodeT>=1){resetAll();}
       break;
   }
 
-  // 파티클 갱신
-  if(visible || state==='summoning' || state==='converging' || state==='exploding'){
-    updateParticles(gScale, pMat.uniforms.uConverge.value, explodeT);
+  if(visible||state==='summoning'||state==='converging'||state==='exploding'){
+    updateAllLayers(gScale, layers[0].mat.uniforms.uConverge.value, explodeT);
   }
-
-  renderer.render(scene, cam3d);
+  renderer.render(scene,cam3d);
 }
 
-// ════════════════════════════════════════════
+// ══════════════════════════════════════════
 // START
-// ════════════════════════════════════════════
-const mpCam = new Camera(video,{
-  onFrame: async()=>{ await mpHands.send({image:video}); },
-  width:640, height:480
+// ══════════════════════════════════════════
+const mpCam=new Camera(video,{
+  onFrame:async()=>{await mpHands.send({image:video});},
+  width:640,height:480
 });
 mpCam.start()
-  .then(()=>{ setState('idle'); })
-  .catch(()=>{ document.getElementById('state-display').textContent='카메라 권한을 허용해주세요'; });
+  .then(()=>{setState('idle');})
+  .catch(()=>{document.getElementById('state-display').textContent='카메라 권한을 허용해주세요';});
 
 window.addEventListener('resize',()=>{
   cam3d.aspect=window.innerWidth/window.innerHeight;
   cam3d.updateProjectionMatrix();
   renderer.setSize(window.innerWidth,window.innerHeight);
 });
-
 animate();
 </script>
 </body>
