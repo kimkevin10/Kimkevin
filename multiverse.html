@@ -6,548 +6,365 @@
 <title>MULTIVERSE</title>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
-  body {
-    background: #000;
-    overflow: hidden;
-    width: 100vw;
-    height: 100vh;
-    font-family: 'Courier New', monospace;
-  }
-  #container {
-    position: relative;
-    width: 100vw;
-    height: 100vh;
-  }
-  #threeCanvas {
-    position: absolute;
-    top: 0; left: 0;
-    width: 100%; height: 100%;
-    z-index: 1;
-  }
+  body { background: #000; overflow: hidden; width: 100vw; height: 100vh; font-family: 'Courier New', monospace; }
+  #threeCanvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 1; }
   #camCanvas {
-    position: absolute;
-    bottom: 16px; right: 16px;
-    width: 160px; height: 120px;
-    border-radius: 12px;
-    border: 1px solid rgba(255,255,255,0.15);
-    z-index: 10;
-    transform: scaleX(-1);
-    opacity: 0.7;
+    position: absolute; bottom: 16px; right: 16px;
+    width: 180px; height: 135px;
+    border-radius: 10px; border: 1px solid rgba(255,255,255,0.2);
+    z-index: 10; transform: scaleX(-1);
   }
-  #ui {
-    position: absolute;
-    top: 0; left: 0;
-    width: 100%; height: 100%;
-    z-index: 5;
-    pointer-events: none;
+  #lmCanvas {
+    position: absolute; bottom: 16px; right: 16px;
+    width: 180px; height: 135px;
+    border-radius: 10px; z-index: 11; pointer-events: none;
   }
   #state-display {
-    position: absolute;
-    top: 20px;
-    left: 50%;
-    transform: translateX(-50%);
-    color: rgba(255,255,255,0.5);
-    font-size: 11px;
-    letter-spacing: 0.2em;
-    text-transform: uppercase;
+    position: absolute; top: 20px; left: 50%; transform: translateX(-50%);
+    color: rgba(255,255,255,0.6); font-size: 12px; letter-spacing: 0.25em;
+    text-transform: uppercase; z-index: 20;
+  }
+  #debug {
+    position: absolute; top: 50px; left: 50%; transform: translateX(-50%);
+    color: rgba(100,255,200,0.7); font-size: 10px; letter-spacing: 0.1em;
+    z-index: 20; text-align: center; line-height: 1.8;
   }
   #guide {
-    position: absolute;
-    bottom: 20px;
-    left: 20px;
-    color: rgba(255,255,255,0.3);
-    font-size: 10px;
-    line-height: 1.8;
-    letter-spacing: 0.1em;
+    position: absolute; bottom: 20px; left: 20px;
+    color: rgba(255,255,255,0.3); font-size: 10px; line-height: 2; letter-spacing: 0.08em; z-index: 20;
   }
   #guide span { color: rgba(255,255,255,0.6); }
-  #loading {
-    position: absolute;
-    top: 50%; left: 50%;
-    transform: translate(-50%, -50%);
-    color: rgba(255,255,255,0.7);
-    font-size: 12px;
-    letter-spacing: 0.3em;
-    text-transform: uppercase;
-    z-index: 20;
-    text-align: center;
-  }
-  #loading .dot {
-    display: inline-block;
-    animation: blink 1.2s infinite;
-  }
-  #loading .dot:nth-child(2) { animation-delay: 0.2s; }
-  #loading .dot:nth-child(3) { animation-delay: 0.4s; }
-  @keyframes blink {
-    0%, 80%, 100% { opacity: 0.2; }
-    40% { opacity: 1; }
-  }
-  #pinch-indicator {
-    position: absolute;
-    top: 20px;
-    right: 20px;
-    width: 50px;
-    height: 50px;
-    z-index: 10;
-  }
-  #pinch-indicator svg circle {
-    transition: r 0.1s ease;
-  }
 </style>
 </head>
 <body>
-<div id="container">
-  <canvas id="threeCanvas"></canvas>
-  <video id="video" style="display:none" playsinline autoplay></video>
-  <canvas id="camCanvas"></canvas>
-  <canvas id="landmarkCanvas" style="position:absolute;bottom:16px;right:16px;width:160px;height:120px;z-index:11;border-radius:12px;pointer-events:none;"></canvas>
-  <div id="ui">
-    <div id="state-display">INITIALIZING</div>
-    <div id="guide">
-      <span>왼손 펼침</span> — 은하 소환<br>
-      <span>오른손 핀치 거리</span> — 확대 / 축소<br>
-      <span>오른손 핀치 닫힘</span> — 수렴 → 폭발<br>
-      <span>왼손 주먹</span> — 고정 / 해제<br>
-      <span>고정 중 + 오른손 회전</span> — 은하 회전
-    </div>
-  </div>
-  <div id="loading">LOADING UNIVERSE<br><span class="dot">.</span><span class="dot">.</span><span class="dot">.</span></div>
+<canvas id="threeCanvas"></canvas>
+<video id="video" style="display:none" playsinline autoplay></video>
+<canvas id="camCanvas" width="180" height="135"></canvas>
+<canvas id="lmCanvas" width="180" height="135"></canvas>
+
+<div id="state-display">카메라 로딩 중...</div>
+<div id="debug"></div>
+<div id="guide">
+  <span>왼손 펼침</span> — 은하 소환<br>
+  <span>오른손 핀치 거리</span> — 확대 / 축소<br>
+  <span>오른손 핀치 닫힘</span> — 수렴 → 폭발<br>
+  <span>왼손 주먹</span> — 고정 (고정 중 오른손 회전 = 은하 회전)
 </div>
 
-<!-- Three.js -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
-<!-- MediaPipe -->
 <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
 <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
 <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
 
 <script>
-// ─────────────────────────────────────────────
-// CONSTANTS & CONFIG
-// ─────────────────────────────────────────────
-const PARTICLE_COUNT = 6000;
-const PINCH_STAGES = [0, 0.12, 0.28, 0.44, 0.60]; // 단계 경계값 (정규화 거리)
-const PINCH_HYSTERESIS = 0.04; // 히스테리시스 버퍼
-const SMOOTH_FRAMES = 12;       // 이동평균 프레임 수
-const ROTATION_SNAP = 4;        // 회전 스냅 (도)
-const ROTATION_SMOOTH = 10;     // 회전 이동평균 프레임
+// ── CONFIG
+const PARTICLE_COUNT = 5000;
+const SMOOTH_FRAMES = 14;
+const ROT_SMOOTH = 10;
+const ROT_SNAP_DEG = 5;
+// 핀치 거리 단계 임계값 (정규화 0~1)
+// 단계: 0=완전닫힘(폭발), 1=축소, 2=기본, 3=확대, 4=최대확대
+const THRESH = [0.08, 0.22, 0.38, 0.54];
+const HYST   = 0.04;
+const STAGE_SCALES = [1.0, 0.45, 1.0, 1.7, 2.6];
 
-// ─────────────────────────────────────────────
-// STATE
-// ─────────────────────────────────────────────
-let appState = 'idle'; // idle | summoning | active | fixed | converging | exploding
+// ── STATE
+let appState = 'idle';
 let galaxyVisible = false;
-let galaxyScale = 1.0;
-let galaxyTargetScale = 1.0;
-let galaxyRotationY = 0;
-let galaxyRotationTarget = 0;
-let summonProgress = 0; // 0~1
-let convergeProgress = 0; // 0~1
-
-// 핀치 단계 (0~4)
-let pinchStage = 2; // 기본값
-let pinchStagePrev = 2;
-
-// 스무딩 버퍼
-let pinchBuffer = [];
-let rotBuffer = [];
-
-// 폭발
+let summonProgress = 0;
+let convergeProgress = 0;
 let explodeTime = 0;
 let explodeActive = false;
-let explodeVelocities = null;
+let explodeVels = null;
+let galaxyScale = 1.0;
+let galaxyTargetScale = 1.0;
+let galaxyRotY = 0;
+let galaxyRotTarget = 0;
+let pinchStage = 2;
+let pinchBuf = [];
+let rotBuf = [];
+let angleFixStart = null;
+let rotFixStart = 0;
+let autoRotating = false;
 
-// ─────────────────────────────────────────────
-// THREE.JS SETUP
-// ─────────────────────────────────────────────
+// ── THREE.JS
 const canvas3d = document.getElementById('threeCanvas');
-const renderer = new THREE.WebGLRenderer({ canvas: canvas3d, antialias: true, alpha: true });
+const renderer = new THREE.WebGLRenderer({ canvas: canvas3d, antialias: true });
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 renderer.setClearColor(0x000000, 1);
 
 const scene = new THREE.Scene();
-const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000);
-camera.position.set(0, 0, 18);
+const cam3d = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000);
+cam3d.position.set(0, 2, 20);
+cam3d.lookAt(0, 0, 0);
 
-// 파티클 생성
-const positions = new Float32Array(PARTICLE_COUNT * 3);
-const colors = new Float32Array(PARTICLE_COUNT * 3);
-const basePositions = new Float32Array(PARTICLE_COUNT * 3); // 은하 기본 형태
-const opacities = new Float32Array(PARTICLE_COUNT);
-
-// 은하 나선 형태 생성
-function generateGalaxy() {
-  const arms = 3;
-  for (let i = 0; i < PARTICLE_COUNT; i++) {
-    const t = i / PARTICLE_COUNT;
-    const arm = i % arms;
-    const armAngle = (arm / arms) * Math.PI * 2;
-    const radius = Math.pow(Math.random(), 0.5) * 8;
-    const spin = radius * 0.6;
-    const spread = (1 - Math.pow(radius / 8, 2)) * 0.5 + 0.1;
-
-    const angle = armAngle + spin + (Math.random() - 0.5) * spread * 2;
-    const x = Math.cos(angle) * radius + (Math.random() - 0.5) * 0.4;
-    const y = (Math.random() - 0.5) * (0.3 + (1 - radius / 8) * 0.5);
-    const z = Math.sin(angle) * radius + (Math.random() - 0.5) * 0.4;
-
-    basePositions[i * 3] = x;
-    basePositions[i * 3 + 1] = y;
-    basePositions[i * 3 + 2] = z;
-
-    // 색상: 중심 흰색/노랑 → 외곽 파랑/보라
-    const coreness = 1 - radius / 8;
-    colors[i * 3]     = 0.6 + coreness * 0.4;
-    colors[i * 3 + 1] = 0.4 + coreness * 0.4;
-    colors[i * 3 + 2] = 0.8 + coreness * 0.2;
-    opacities[i] = 0;
-  }
-}
-generateGalaxy();
-
-// 파티클 geometry
-const geometry = new THREE.BufferGeometry();
-geometry.setAttribute('position', new THREE.BufferAttribute(positions.slice(), 3));
-geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
-
-const particleMaterial = new THREE.ShaderMaterial({
-  uniforms: {
-    uTime: { value: 0 },
-    uOpacity: { value: 0 },
-    uConverge: { value: 0 },
-    uExplode: { value: 0 },
-  },
-  vertexShader: `
-    attribute vec3 color;
-    varying vec3 vColor;
-    varying float vDist;
-    uniform float uTime;
-    uniform float uConverge;
-    uniform float uExplode;
-    void main() {
-      vColor = color;
-      vDist = length(position);
-      vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
-      float size = 2.5 + (1.0 - min(vDist / 8.0, 1.0)) * 2.0;
-      gl_PointSize = size * (300.0 / -mvPosition.z);
-      gl_Position = projectionMatrix * mvPosition;
-    }
-  `,
-  fragmentShader: `
-    varying vec3 vColor;
-    varying float vDist;
-    uniform float uOpacity;
-    void main() {
-      vec2 uv = gl_PointCoord - 0.5;
-      float d = length(uv);
-      if (d > 0.5) discard;
-      float alpha = (1.0 - d * 2.0) * uOpacity;
-      gl_FragColor = vec4(vColor, alpha);
-    }
-  `,
-  transparent: true,
-  depthWrite: false,
-  blending: THREE.AdditiveBlending,
-  vertexColors: true,
-});
-
-const particles = new THREE.Points(geometry, particleMaterial);
-scene.add(particles);
-
-// 별 배경
+// 배경 별
 const bgGeo = new THREE.BufferGeometry();
-const bgPos = new Float32Array(3000 * 3);
-for (let i = 0; i < 3000; i++) {
-  bgPos[i * 3] = (Math.random() - 0.5) * 200;
-  bgPos[i * 3 + 1] = (Math.random() - 0.5) * 200;
-  bgPos[i * 3 + 2] = (Math.random() - 0.5) * 200;
+const bgPos = new Float32Array(4000 * 3);
+for (let i = 0; i < 4000; i++) {
+  bgPos[i*3]   = (Math.random()-0.5)*300;
+  bgPos[i*3+1] = (Math.random()-0.5)*300;
+  bgPos[i*3+2] = (Math.random()-0.5)*300;
 }
 bgGeo.setAttribute('position', new THREE.BufferAttribute(bgPos, 3));
-const bgMat = new THREE.PointsMaterial({ color: 0xffffff, size: 0.08, transparent: true, opacity: 0.4 });
-scene.add(new THREE.Points(bgGeo, bgMat));
+scene.add(new THREE.Points(bgGeo, new THREE.PointsMaterial({ color:0xffffff, size:0.07, transparent:true, opacity:0.35 })));
 
-// ─────────────────────────────────────────────
-// HELPER FUNCTIONS
-// ─────────────────────────────────────────────
+// 파티클
+const pPositions = new Float32Array(PARTICLE_COUNT * 3);
+const pColors    = new Float32Array(PARTICLE_COUNT * 3);
+const pBase      = new Float32Array(PARTICLE_COUNT * 3); // 은하 원형
 
-// 이동평균
-function movingAvg(buf, val, frames) {
-  buf.push(val);
-  if (buf.length > frames) buf.shift();
-  return buf.reduce((a, b) => a + b, 0) / buf.length;
-}
-
-// 핀치 거리 → 단계 (히스테리시스 포함)
-function calcPinchStage(dist, prevStage) {
-  const thresholds = [0.10, 0.26, 0.42, 0.58];
-  const hyst = PINCH_HYSTERESIS;
-  let stage = prevStage;
-  for (let i = 0; i < thresholds.length; i++) {
-    const up = thresholds[i] + hyst;
-    const down = thresholds[i] - hyst;
-    if (prevStage <= i && dist > up) { stage = i + 1; break; }
-    if (prevStage > i && dist < down) { stage = i; break; }
-  }
-  return Math.max(0, Math.min(4, stage));
-}
-
-// 두 점 사이 거리 (정규화 랜드마크)
-function dist2D(a, b) {
-  return Math.sqrt((a.x - b.x) ** 2 + (a.y - b.y) ** 2);
-}
-
-// 손 열림 판단 (왼손 받침 모양)
-function isHandOpen(lm) {
-  // 4개 손가락 끝이 MCP보다 위에 있으면 펼침
-  const tips = [8, 12, 16, 20];
-  const mcps = [5, 9, 13, 17];
-  let openCount = 0;
-  for (let i = 0; i < 4; i++) {
-    if (lm[tips[i]].y < lm[mcps[i]].y) openCount++;
-  }
-  return openCount >= 3;
-}
-
-// 주먹 판단
-function isFist(lm) {
-  const tips = [8, 12, 16, 20];
-  const mcps = [5, 9, 13, 17];
-  let closedCount = 0;
-  for (let i = 0; i < 4; i++) {
-    if (lm[tips[i]].y > lm[mcps[i]].y) closedCount++;
-  }
-  return closedCount >= 3;
-}
-
-// 엄지-검지 각도 (집게 회전용)
-function pinchAngle(lm) {
-  const thumb = lm[4];
-  const index = lm[8];
-  return Math.atan2(index.y - thumb.y, index.x - thumb.x) * 180 / Math.PI;
-}
-
-// 파티클 위치 업데이트
-function updateParticlePositions(scale, converge, explodeT) {
-  const pos = geometry.attributes.position.array;
-  const cosY = Math.cos(galaxyRotationY);
-  const sinY = Math.sin(galaxyRotationY);
-
+function buildGalaxy() {
+  const ARMS = 3;
   for (let i = 0; i < PARTICLE_COUNT; i++) {
-    const bx = basePositions[i * 3];
-    const by = basePositions[i * 3 + 1];
-    const bz = basePositions[i * 3 + 2];
+    const arm    = i % ARMS;
+    const armAng = (arm / ARMS) * Math.PI * 2;
+    const r      = Math.pow(Math.random(), 0.45) * 8.5;
+    const spin   = r * 0.55;
+    const spread = 0.15 + (1 - r/8.5) * 0.4;
+    const ang    = armAng + spin + (Math.random()-0.5) * spread * 2.5;
 
-    // 회전 적용
-    const rx = bx * cosY - bz * sinY;
-    const rz = bx * sinY + bz * cosY;
+    pBase[i*3]   = Math.cos(ang) * r + (Math.random()-0.5)*0.3;
+    pBase[i*3+1] = (Math.random()-0.5) * (0.25 + (1-r/8.5)*0.6);
+    pBase[i*3+2] = Math.sin(ang) * r + (Math.random()-0.5)*0.3;
 
-    // 수렴
-    let cx = rx * scale * (1 - converge);
-    let cy = by * scale * (1 - converge);
-    let cz = rz * scale * (1 - converge);
+    const core = 1 - r/8.5;
+    pColors[i*3]   = 0.55 + core*0.45;
+    pColors[i*3+1] = 0.35 + core*0.45;
+    pColors[i*3+2] = 0.85 + core*0.15;
+  }
+}
+buildGalaxy();
 
+const pGeo = new THREE.BufferGeometry();
+pGeo.setAttribute('position', new THREE.BufferAttribute(pPositions.slice(), 3));
+pGeo.setAttribute('color',    new THREE.BufferAttribute(pColors, 3));
+
+const pMat = new THREE.ShaderMaterial({
+  uniforms: { uOpacity:{ value:0 }, uConverge:{ value:0 } },
+  vertexShader:`
+    attribute vec3 color; varying vec3 vColor; varying float vR;
+    uniform float uConverge;
+    void main(){
+      vColor=color; vR=length(position);
+      vec4 mv=modelViewMatrix*vec4(position,1.0);
+      float sz=2.8+(1.0-min(vR/8.5,1.0))*2.2;
+      gl_PointSize=sz*(280.0/-mv.z);
+      gl_Position=projectionMatrix*mv;
+    }`,
+  fragmentShader:`
+    varying vec3 vColor; varying float vR;
+    uniform float uOpacity;
+    void main(){
+      vec2 uv=gl_PointCoord-0.5; float d=length(uv);
+      if(d>0.5)discard;
+      float a=(1.0-d*2.0)*uOpacity;
+      gl_FragColor=vec4(vColor,a);
+    }`,
+  transparent:true, depthWrite:false,
+  blending: THREE.AdditiveBlending, vertexColors:true,
+});
+
+const particleMesh = new THREE.Points(pGeo, pMat);
+scene.add(particleMesh);
+
+// ── HELPERS
+function eio(t){ return t<0.5?2*t*t:-1+(4-2*t)*t; }
+
+function movAvg(buf, val, n){
+  buf.push(val); if(buf.length>n) buf.shift();
+  return buf.reduce((a,b)=>a+b,0)/buf.length;
+}
+
+function calcStage(dist, prev){
+  let s = prev;
+  for(let i=0;i<THRESH.length;i++){
+    if(prev<=i && dist>THRESH[i]+HYST){ s=i+1; break; }
+    if(prev>i  && dist<THRESH[i]-HYST){ s=i;   break; }
+  }
+  return Math.max(0, Math.min(4, s));
+}
+
+function d2(a,b){ return Math.sqrt((a.x-b.x)**2+(a.y-b.y)**2); }
+
+function isOpen(lm){
+  let n=0;
+  [[8,6],[12,10],[16,14],[20,18]].forEach(([t,m])=>{ if(lm[t].y<lm[m].y) n++; });
+  return n>=3;
+}
+function isFist(lm){
+  let n=0;
+  [[8,6],[12,10],[16,14],[20,18]].forEach(([t,m])=>{ if(lm[t].y>lm[m].y) n++; });
+  return n>=3;
+}
+function pinchAng(lm){
+  return Math.atan2(lm[8].y-lm[4].y, lm[8].x-lm[4].x)*180/Math.PI;
+}
+
+function updateParticles(scale, converge, expT){
+  const pos = pGeo.attributes.position.array;
+  const cy = Math.cos(galaxyRotY), sy = Math.sin(galaxyRotY);
+  for(let i=0;i<PARTICLE_COUNT;i++){
+    let bx=pBase[i*3], by=pBase[i*3+1], bz=pBase[i*3+2];
+    // 회전
+    const rx = bx*cy - bz*sy;
+    const rz = bx*sy + bz*cy;
+    // 스케일 + 수렴
+    const c = eio(Math.min(converge,1));
+    pos[i*3]   = rx * scale * (1-c);
+    pos[i*3+1] = by * scale * (1-c);
+    pos[i*3+2] = rz * scale * (1-c);
     // 폭발
-    if (explodeActive && explodeVelocities) {
-      const ex = explodeVelocities[i * 3];
-      const ey = explodeVelocities[i * 3 + 1];
-      const ez = explodeVelocities[i * 3 + 2];
-      const t = explodeT;
-      const ease = Math.pow(t, 0.3);
-      cx += ex * ease * 12;
-      cy += ey * ease * 12;
-      cz += ez * ease * 12;
+    if(explodeActive && explodeVels){
+      const ease = Math.pow(Math.min(expT,1), 0.3);
+      pos[i*3]   += explodeVels[i*3]   * ease * 14;
+      pos[i*3+1] += explodeVels[i*3+1] * ease * 14;
+      pos[i*3+2] += explodeVels[i*3+2] * ease * 14;
     }
-
-    pos[i * 3] = cx;
-    pos[i * 3 + 1] = cy;
-    pos[i * 3 + 2] = cz;
   }
-  geometry.attributes.position.needsUpdate = true;
+  pGeo.attributes.position.needsUpdate = true;
 }
 
-// 폭발 속도 초기화
-function initExplode() {
-  explodeVelocities = new Float32Array(PARTICLE_COUNT * 3);
-  for (let i = 0; i < PARTICLE_COUNT; i++) {
-    const theta = Math.random() * Math.PI * 2;
-    const phi = Math.acos(2 * Math.random() - 1);
-    const speed = 0.5 + Math.random() * 1.5;
-    explodeVelocities[i * 3] = Math.sin(phi) * Math.cos(theta) * speed;
-    explodeVelocities[i * 3 + 1] = Math.cos(phi) * speed * 0.5;
-    explodeVelocities[i * 3 + 2] = Math.sin(phi) * Math.sin(theta) * speed;
+function initExplode(){
+  explodeVels = new Float32Array(PARTICLE_COUNT*3);
+  for(let i=0;i<PARTICLE_COUNT;i++){
+    const th=Math.random()*Math.PI*2, ph=Math.acos(2*Math.random()-1);
+    const sp=0.4+Math.random()*1.8;
+    explodeVels[i*3]   = Math.sin(ph)*Math.cos(th)*sp;
+    explodeVels[i*3+1] = Math.cos(ph)*sp*0.5;
+    explodeVels[i*3+2] = Math.sin(ph)*Math.sin(th)*sp;
   }
 }
 
-// 단계 → 목표 스케일
-const STAGE_SCALES = [1.0, 0.5, 1.0, 1.6, 2.4]; // 0=수렴대기, 1=축소, 2=기본, 3=확대, 4=최대
-
-function setStateDisplay(text) {
-  document.getElementById('state-display').textContent = text;
+function setState(s){
+  appState=s;
+  document.getElementById('state-display').textContent=s.toUpperCase();
 }
 
-// ─────────────────────────────────────────────
-// MEDIAPIPE SETUP
-// ─────────────────────────────────────────────
-const video = document.getElementById('video');
-const camCanvas = document.getElementById('camCanvas');
-const lmCanvas = document.getElementById('landmarkCanvas');
-const camCtx = camCanvas.getContext('2d');
-const lmCtx = lmCanvas.getContext('2d');
+function resetAll(){
+  galaxyVisible=false; explodeActive=false;
+  galaxyScale=1; galaxyTargetScale=1;
+  galaxyRotY=0; galaxyRotTarget=0;
+  pinchStage=2; pinchBuf=[]; rotBuf=[];
+  convergeProgress=0; summonProgress=0; explodeTime=0;
+  pMat.uniforms.uOpacity.value=0;
+  pMat.uniforms.uConverge.value=0;
+  angleFixStart=null;
+  setState('idle');
+}
 
-let leftHand = null;
-let rightHand = null;
-let prevRightAngle = null;
-let angleAtFixStart = null;
-let rotAtFixStart = 0;
+// ── MEDIAPIPE
+const video   = document.getElementById('video');
+const camCvs  = document.getElementById('camCanvas');
+const lmCvs   = document.getElementById('lmCanvas');
+const camCtx  = camCvs.getContext('2d');
+const lmCtx   = lmCvs.getContext('2d');
+const dbg     = document.getElementById('debug');
 
-const hands = new Hands({
-  locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
+let leftHand=null, rightHand=null;
+
+const mpHands = new Hands({
+  locateFile: f=>`https://cdn.jsdelivr.net/npm/@mediapipe/hands/${f}`
+});
+mpHands.setOptions({
+  maxNumHands:2, modelComplexity:1,
+  minDetectionConfidence:0.72, minTrackingConfidence:0.72
 });
 
-hands.setOptions({
-  maxNumHands: 2,
-  modelComplexity: 1,
-  minDetectionConfidence: 0.75,
-  minTrackingConfidence: 0.75,
-});
-
-hands.onResults((results) => {
-  // 캠 미러 그리기
-  camCtx.save();
-  camCtx.scale(-1, 1);
-  camCtx.drawImage(results.image, -160, 0, 160, 120);
+mpHands.onResults(results=>{
+  // 카메라 미리보기
+  camCtx.save(); camCtx.scale(-1,1);
+  camCtx.drawImage(results.image,-180,0,180,135);
   camCtx.restore();
-  lmCtx.clearRect(0, 0, 160, 120);
+  lmCtx.clearRect(0,0,180,135);
 
-  leftHand = null;
-  rightHand = null;
+  leftHand=null; rightHand=null;
 
-  if (results.multiHandLandmarks && results.multiHandedness) {
-    for (let i = 0; i < results.multiHandLandmarks.length; i++) {
-      const label = results.multiHandedness[i].label; // 'Left' or 'Right' (미러 기준)
-      // 카메라 미러링으로 인해 MediaPipe Left = 실제 오른손, Right = 실제 왼손
-      if (label === 'Right') leftHand = results.multiHandLandmarks[i];
-      if (label === 'Left') rightHand = results.multiHandLandmarks[i];
+  if(results.multiHandLandmarks && results.multiHandedness){
+    for(let i=0;i<results.multiHandLandmarks.length;i++){
+      const label = results.multiHandedness[i].label;
+      const lm    = results.multiHandLandmarks[i];
+      // MediaPipe는 셀피 기준: 'Right'=화면 오른쪽=실제 왼손
+      if(label==='Right') leftHand  = lm;
+      if(label==='Left')  rightHand = lm;
 
-      // 랜드마크 그리기
-      lmCtx.save();
-      lmCtx.scale(-1, 1);
-      lmCtx.translate(-160, 0);
-      drawConnectors(lmCtx, results.multiHandLandmarks[i], HAND_CONNECTIONS, { color: 'rgba(100,200,255,0.5)', lineWidth: 1 });
-      drawLandmarks(lmCtx, results.multiHandLandmarks[i], { color: 'rgba(255,255,255,0.8)', lineWidth: 0.5, radius: 2 });
+      lmCtx.save(); lmCtx.scale(-1,1); lmCtx.translate(-180,0);
+      drawConnectors(lmCtx,lm,HAND_CONNECTIONS,{color:'rgba(80,200,255,0.5)',lineWidth:1});
+      drawLandmarks(lmCtx,lm,{color:'rgba(255,255,255,0.9)',lineWidth:0.5,radius:2});
       lmCtx.restore();
     }
   }
 
+  // 디버그 표시
+  const lStr = leftHand  ? (isOpen(leftHand)?'왼손:펼침':isFist(leftHand)?'왼손:주먹':'왼손:중간') : '왼손:없음';
+  const rDist = rightHand ? d2(rightHand[4],rightHand[8]).toFixed(3) : '-';
+  const rStr = rightHand ? `오른손:핀치거리=${rDist}` : '오른손:없음';
+  dbg.textContent = `${lStr}  |  ${rStr}`;
+
   processGestures();
 });
 
-function processGestures() {
-  // ── 왼손 처리
-  let leftOpen = false;
-  let leftFist = false;
-  if (leftHand) {
-    leftOpen = isHandOpen(leftHand);
-    leftFist = isFist(leftHand);
-  }
+function processGestures(){
+  const leftOpen = leftHand  && isOpen(leftHand);
+  const leftFist = leftHand  && isFist(leftHand);
+  const rDist    = rightHand ? d2(rightHand[4],rightHand[8]) : null;
+  const rAng     = rightHand ? pinchAng(rightHand) : null;
 
-  // ── 오른손 핀치 거리
-  let rawPinchDist = null;
-  let rawAngle = null;
-  if (rightHand) {
-    rawPinchDist = dist2D(rightHand[4], rightHand[8]);
-    rawAngle = pinchAngle(rightHand);
-  }
+  switch(appState){
 
-  // ── 상태 전환 로직
-  switch (appState) {
     case 'idle':
-      if (leftOpen) {
-        appState = 'summoning';
-        summonProgress = 0;
-        setStateDisplay('SUMMONING');
-      }
+      if(leftOpen){ setState('summoning'); summonProgress=0; }
       break;
 
     case 'summoning':
-      // animate loop에서 summonProgress 올림
-      if (summonProgress >= 1) {
-        appState = 'active';
-        setStateDisplay('ACTIVE');
-      }
-      if (!leftOpen && !leftFist) {
-        // 손 치우면 소환 취소
-        // (optional: 그냥 유지)
-      }
+      // summonProgress는 animate loop에서 증가
       break;
 
     case 'active':
-      if (!galaxyVisible) break;
-
       // 왼손 주먹 → 고정
-      if (leftFist) {
-        appState = 'fixed';
-        angleAtFixStart = null;
-        rotAtFixStart = galaxyRotationY;
-        setStateDisplay('FIXED');
-        pinchBuffer = [];
+      if(leftFist){
+        setState('fixed');
+        angleFixStart=null; rotFixStart=galaxyRotY;
+        pinchBuf=[]; rotBuf=[];
         break;
       }
-
-      // 오른손 핀치 처리
-      if (rawPinchDist !== null) {
-        const smoothDist = movingAvg(pinchBuffer, rawPinchDist, SMOOTH_FRAMES);
-        const newStage = calcPinchStage(smoothDist, pinchStage);
-
-        if (newStage !== pinchStage) {
-          pinchStage = newStage;
-          if (pinchStage === 0) {
-            // 수렴 시작
-            appState = 'converging';
-            convergeProgress = 0;
-            setStateDisplay('CONVERGING');
+      // 오른손 핀치
+      if(rDist!==null){
+        const sm   = movAvg(pinchBuf, rDist, SMOOTH_FRAMES);
+        const newS = calcStage(sm, pinchStage);
+        if(newS!==pinchStage){
+          pinchStage=newS;
+          if(pinchStage===0){
+            setState('converging'); convergeProgress=0;
           } else {
-            galaxyTargetScale = STAGE_SCALES[pinchStage];
+            galaxyTargetScale=STAGE_SCALES[pinchStage];
           }
         }
       }
       break;
 
     case 'fixed':
-      // 왼손 주먹 해제 → active
-      if (leftHand && !leftFist) {
-        appState = 'active';
-        setStateDisplay('ACTIVE');
-        angleAtFixStart = null;
-        rotBuffer = [];
+      // 왼손 펼침/없음 → active
+      if(!leftFist){
+        setState('active');
+        angleFixStart=null; rotBuf=[];
         break;
       }
-      if (!leftHand) {
-        appState = 'active';
-        setStateDisplay('ACTIVE');
-        angleAtFixStart = null;
-        rotBuffer = [];
-        break;
-      }
-
-      // 오른손 집게 회전
-      if (rawAngle !== null) {
-        const smoothAngle = movingAvg(rotBuffer, rawAngle, ROTATION_SMOOTH);
-        // 스냅
-        const snappedAngle = Math.round(smoothAngle / ROTATION_SNAP) * ROTATION_SNAP;
-
-        if (angleAtFixStart === null) {
-          angleAtFixStart = snappedAngle;
-        } else {
-          let delta = snappedAngle - angleAtFixStart;
-          galaxyRotationTarget = rotAtFixStart + delta * Math.PI / 180 * 0.8;
+      // 오른손 회전
+      if(rAng!==null){
+        const sm  = movAvg(rotBuf, rAng, ROT_SMOOTH);
+        const snp = Math.round(sm/ROT_SNAP_DEG)*ROT_SNAP_DEG;
+        if(angleFixStart===null){ angleFixStart=snp; }
+        else {
+          let delta = snp - angleFixStart;
+          galaxyRotTarget = rotFixStart + delta * Math.PI/180 * 0.9;
         }
       }
       break;
 
     case 'converging':
-      // animate loop에서 convergeProgress 올림
+      // animate loop에서 처리
       break;
 
     case 'exploding':
@@ -556,134 +373,83 @@ function processGestures() {
   }
 }
 
-// ─────────────────────────────────────────────
-// ANIMATION LOOP
-// ─────────────────────────────────────────────
-let clock = new THREE.Clock();
+// ── ANIMATE
+const clock = new THREE.Clock();
 
-function animate() {
+function animate(){
   requestAnimationFrame(animate);
   const dt = clock.getDelta();
-  const elapsed = clock.getElapsedTime();
 
-  particleMaterial.uniforms.uTime.value = elapsed;
+  switch(appState){
 
-  // 소환 애니메이션
-  if (appState === 'summoning') {
-    summonProgress = Math.min(summonProgress + dt * 0.4, 1); // ~2.5초
-    particleMaterial.uniforms.uOpacity.value = easeInOut(summonProgress) * 0.9;
-    if (summonProgress >= 1) {
-      galaxyVisible = true;
-      appState = 'active';
-      setStateDisplay('ACTIVE');
-      document.getElementById('loading').style.display = 'none';
-    }
-  }
+    case 'summoning':
+      summonProgress = Math.min(summonProgress + dt*0.38, 1);
+      pMat.uniforms.uOpacity.value = eio(summonProgress)*0.92;
+      if(summonProgress>=1){
+        galaxyVisible=true;
+        // 자동 회전 시작
+        setState('active');
+      }
+      break;
 
-  // 스케일 보간
-  if (appState === 'active' || appState === 'fixed') {
-    galaxyScale += (galaxyTargetScale - galaxyScale) * 0.06;
-  }
+    case 'active':
+      // 스케일 보간
+      galaxyScale += (galaxyTargetScale - galaxyScale)*0.055;
+      // 자동 회전
+      galaxyRotY += 0.0006;
+      galaxyRotTarget = galaxyRotY;
+      break;
 
-  // 회전 보간
-  galaxyRotationY += (galaxyRotationTarget - galaxyRotationY) * 0.08;
+    case 'fixed':
+      // 스케일 고정 (변경 없음)
+      // 회전 보간
+      galaxyRotY += (galaxyRotTarget - galaxyRotY)*0.07;
+      break;
 
-  // 수렴 애니메이션
-  if (appState === 'converging') {
-    convergeProgress = Math.min(convergeProgress + dt * 0.6, 1);
-    particleMaterial.uniforms.uConverge.value = easeInOut(convergeProgress);
-    if (convergeProgress >= 1) {
-      // 폭발!
-      appState = 'exploding';
-      explodeActive = true;
-      explodeTime = 0;
-      initExplode();
-      setStateDisplay('BIG BANG');
-    }
-  }
+    case 'converging':
+      convergeProgress = Math.min(convergeProgress + dt*0.55, 1);
+      pMat.uniforms.uConverge.value = eio(convergeProgress);
+      if(convergeProgress>=1){
+        setState('exploding');
+        explodeActive=true; explodeTime=0;
+        initExplode();
+      }
+      break;
 
-  // 폭발 애니메이션
-  if (appState === 'exploding') {
-    explodeTime = Math.min(explodeTime + dt * 0.5, 1);
-    particleMaterial.uniforms.uConverge.value = 1 - easeInOut(explodeTime);
-
-    // 파티클 서서히 사라짐
-    if (explodeTime > 0.6) {
-      const fade = 1 - (explodeTime - 0.6) / 0.4;
-      particleMaterial.uniforms.uOpacity.value = fade * 0.9;
-    }
-
-    if (explodeTime >= 1) {
-      // 리셋
-      appState = 'idle';
-      galaxyVisible = false;
-      explodeActive = false;
-      galaxyScale = 1.0;
-      galaxyTargetScale = 1.0;
-      galaxyRotationY = 0;
-      galaxyRotationTarget = 0;
-      pinchStage = 2;
-      convergeProgress = 0;
-      particleMaterial.uniforms.uOpacity.value = 0;
-      particleMaterial.uniforms.uConverge.value = 0;
-      pinchBuffer = [];
-      rotBuffer = [];
-      setStateDisplay('IDLE — 왼손을 펼쳐 소환');
-      document.getElementById('loading').style.display = 'none';
-    }
+    case 'exploding':
+      explodeTime = Math.min(explodeTime + dt*0.45, 1);
+      pMat.uniforms.uConverge.value = Math.max(0, 1 - eio(explodeTime)*1.5);
+      if(explodeTime>0.55){
+        const fade = 1-(explodeTime-0.55)/0.45;
+        pMat.uniforms.uOpacity.value = Math.max(0, fade*0.92);
+      }
+      if(explodeTime>=1){ resetAll(); }
+      break;
   }
 
   // 파티클 위치 업데이트
-  if (galaxyVisible || appState === 'converging' || appState === 'exploding') {
-    updateParticlePositions(
-      galaxyScale,
-      particleMaterial.uniforms.uConverge.value,
-      explodeTime
-    );
+  if(galaxyVisible || appState==='summoning' || appState==='converging' || appState==='exploding'){
+    updateParticles(galaxyScale, pMat.uniforms.uConverge.value, explodeTime);
   }
 
-  // 은하 자체 회전 (항상 천천히)
-  if (appState === 'active' && galaxyVisible) {
-    galaxyRotationY += 0.0008;
-    galaxyRotationTarget = galaxyRotationY;
-  }
-
-  renderer.render(scene, camera);
+  renderer.render(scene, cam3d);
 }
 
-function easeInOut(t) {
-  return t < 0.5 ? 2 * t * t : -1 + (4 - 2 * t) * t;
-}
+// ── CAMERA
+const mpCam = new Camera(video,{
+  onFrame: async()=>{ await mpHands.send({image:video}); },
+  width:640, height:480
+});
+mpCam.start()
+  .then(()=>{ setState('idle'); })
+  .catch(()=>{ document.getElementById('state-display').textContent='카메라 권한을 허용해주세요'; });
 
-// ─────────────────────────────────────────────
-// CAMERA SETUP
-// ─────────────────────────────────────────────
-const mpCamera = new Camera(video, {
-  onFrame: async () => {
-    await hands.send({ image: video });
-  },
-  width: 640,
-  height: 480,
+window.addEventListener('resize',()=>{
+  cam3d.aspect=window.innerWidth/window.innerHeight;
+  cam3d.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth,window.innerHeight);
 });
 
-mpCamera.start().then(() => {
-  document.getElementById('loading').textContent = '';
-  document.getElementById('loading').style.display = 'none';
-  setStateDisplay('IDLE — 왼손을 펼쳐 소환');
-}).catch(err => {
-  document.getElementById('loading').textContent = '카메라 권한을 허용해주세요';
-});
-
-// ─────────────────────────────────────────────
-// RESIZE
-// ─────────────────────────────────────────────
-window.addEventListener('resize', () => {
-  camera.aspect = window.innerWidth / window.innerHeight;
-  camera.updateProjectionMatrix();
-  renderer.setSize(window.innerWidth, window.innerHeight);
-});
-
-// START
 animate();
 </script>
 </body>
